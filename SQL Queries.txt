@@ -1,0 +1,189 @@
+/* QUESTION SET #1 */
+
+/* Query No.1: Create a query that lists each movie, the film category it is classified in, and the number of times it has been rented out. */
+
+
+WITH X AS
+(SELECT *
+FROM category AS c
+JOIN film_category AS f_c
+  ON c.category_id = f_c.category_id
+JOIN film AS f
+  ON f.film_id = f_c.film_id
+JOIN inventory AS i
+  ON i.film_id = f.film_id
+JOIN rental AS r
+  ON r.inventory_id = i.inventory_id
+WHERE c.name IN ('Animation', 'Children', 'Classics', 'Comedy', 'Family', 'Music'))
+
+SELECT
+  X.title film_title,
+  X.name category_name,
+  COUNT(X.title) rental_count
+FROM X
+GROUP BY 1,
+         2
+ORDER BY category_name, film_title
+______________________________________________
+
+/* Query No.2:  Can you provide a table with the movie titles and divide them into 4 levels (first_quarter, second_quarter, third_quarter, and final_quarter) based on the quartiles (25%, 50%, 75%) of the rental duration for movies across all categories? */
+
+
+WITH X AS
+(SELECT *
+FROM category AS c
+JOIN film_category AS f_c
+  ON c.category_id = f_c.category_id
+JOIN film AS f
+  ON f.film_id = f_c.film_id
+WHERE c.name IN ('Animation', 'Children', 'Classics', 'Comedy', 'Family', 'Music'))
+
+SELECT
+  X.title,
+  X.name,
+  X.rental_duration,
+  NTILE(4) OVER (ORDER BY rental_duration)
+  AS standard_quartile
+FROM X
+ORDER BY standard_quartile
+______________________________________________
+
+/* Query No.3: Provide a table with the family-friendly film category, each of the quartiles, and the corresponding count of movies within each combination of film category for each corresponding rental duration category.*/
+
+
+WITH X AS
+(SELECT c.name category,
+  NTILE(4) OVER (ORDER BY f.rental_duration)
+  AS standard_quartile
+FROM category c
+JOIN film_category f_c
+  ON c.category_id = f_c.category_id
+JOIN film f
+  ON f.film_id = f_c.film_id
+WHERE c.name IN ('Animation', 'Children', 'Classics', 'Comedy', 'Family', 'Music')
+ORDER BY category, standard_quartile)
+
+SELECT
+  X.category,
+  X.standard_quartile,
+  COUNT(*)
+FROM X
+GROUP BY 1,
+         2
+ORDER BY category, standard_quartile
+
+______________________________________________
+______________________________________________
+
+/* QUESTION SET #2 */
+
+/* Query No.1: Write a query that returns the store ID for the store, the year and month and the number of rental orders each store has fulfilled for that month. Your table should include a column for each of the following: year, month, store ID and count of rental orders fulfilled during that month. */
+
+
+SELECT
+  date_part('year', r.rental_date) AS year,
+  date_part('month', r.rental_date) AS month,
+  s1.store_id AS store_id,
+  COUNT(*)
+FROM store AS s1
+JOIN staff AS s2
+  ON s1.store_id = s2.store_id
+JOIN rental AS r
+  ON s2.staff_id = r.staff_id
+GROUP BY 1,
+         2,
+         3
+ORDER BY 4 DESC;
+______________________________________________
+
+/* Query No.2: Can you write a query to capture the customer name, month and year of payment, and total payment amount for each month by these top 10 paying customers? */
+
+
+WITH X AS 
+(SELECT
+  (first_name ||' '|| last_name) AS fullname,
+  c.customer_id,
+  p.amount,
+  p.payment_date
+FROM customer AS c
+JOIN payment AS p
+  ON c.customer_id = p.customer_id),
+
+Y AS
+(SELECT
+  X.customer_id
+FROM X
+GROUP BY 1
+ORDER BY SUM(X.amount) DESC
+limit 10)
+
+SELECT
+  X.fullname,
+  DATE_PART('year', X.payment_date) AS year,
+  DATE_PART('month', X.payment_date) AS month,
+  count (*),
+  SUM(X.amount)
+FROM X
+JOIN Y
+  ON X.customer_id = Y.customer_id
+WHERE X.payment_date BETWEEN '20070101' AND '20080101'
+GROUP BY 1, 2, 3;
+______________________________________________
+
+/* Query No.3: write a query to compare the payment amounts in each successive month. */
+
+
+WITH X AS
+(SELECT
+  (first_name ||' '|| last_name) AS fullname, 
+  c.customer_id,
+  p.amount,
+  p.payment_date
+FROM customer AS c
+JOIN payment AS p
+  ON c.customer_id = p.customer_id),
+
+Y AS
+(SELECT
+  X.customer_id
+FROM X
+GROUP BY 1
+ORDER BY SUM(X.amount) DESC
+limit 10),
+
+Z AS
+(SELECT
+  X.fullname,
+  DATE_PART('year', X.payment_date) AS year,
+  DATE_PART('month', X.payment_date) AS month,
+  COUNT (*),
+  SUM(X.amount),
+  lead(SUM(X.amount)) 
+  OVER(
+    PARTITION BY X.fullname
+    ORDER BY DATE_PART('month', X.payment_date)) AS lead,
+      lead(SUM(X.amount))
+      OVER(PARTITION BY X.fullname
+        ORDER BY date_part('month', X.payment_date)) - SUM(X.amount) AS lead_dif
+FROM X
+JOIN Y
+  ON X.customer_id = Y.customer_id
+WHERE X.payment_date BETWEEN '20070101' AND '20080101'
+GROUP BY 1, 2, 3
+ORDER BY 1, 3, 2)
+
+SELECT
+  Z.*,
+  CASE WHEN Z.lead_dif = 
+    (SELECT
+      MAX(Z.lead_dif)
+    FROM Z
+    ORDER BY 1 DESC
+    limit 1)
+    THEN 'Maximum Difference'
+  ELSE NULL
+END AS max_dif  				
+FROM Z
+ORDER BY 1;
+
+
